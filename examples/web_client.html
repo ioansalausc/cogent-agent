@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cogent Agent - Web Client</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #0f3460;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            color: #e94560;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #666;
+        }
+        .status-dot.connected {
+            background: #4caf50;
+        }
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            background: #0f0f1a;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            min-height: 400px;
+        }
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        .message.user {
+            background: #e94560;
+            margin-left: auto;
+        }
+        .message.agent {
+            background: #16213e;
+        }
+        .message.system {
+            background: #0f3460;
+            font-size: 0.85rem;
+            color: #aaa;
+            max-width: 100%;
+            text-align: center;
+        }
+        .message.error {
+            background: #8b0000;
+        }
+        .message pre {
+            background: #000;
+            padding: 0.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin-top: 0.5rem;
+        }
+        .input-area {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .input-area input {
+            flex: 1;
+            padding: 1rem;
+            border: none;
+            border-radius: 8px;
+            background: #16213e;
+            color: #eee;
+            font-size: 1rem;
+        }
+        .input-area input:focus {
+            outline: 2px solid #e94560;
+        }
+        .input-area button {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 8px;
+            background: #e94560;
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .input-area button:hover {
+            background: #ff6b6b;
+        }
+        .input-area button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .controls input, .controls select {
+            padding: 0.5rem;
+            border: none;
+            border-radius: 4px;
+            background: #16213e;
+            color: #eee;
+        }
+        .controls button {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            background: #0f3460;
+            color: #eee;
+            cursor: pointer;
+        }
+        .controls button:hover {
+            background: #16213e;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>🤖 Cogent Agent</h1>
+        <div class="status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Disconnected</span>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="controls">
+            <input type="text" id="wsUrl" value="ws://localhost:8080" placeholder="WebSocket URL">
+            <input type="text" id="agentId" value="cogent-agent-001" placeholder="Agent ID">
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+        </div>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="input-area">
+            <input type="text" id="prompt" placeholder="Enter your task..." onkeypress="handleKeyPress(event)">
+            <button onclick="sendTask()" id="sendBtn" disabled>Send</button>
+        </div>
+    </main>
+
+    <script>
+        let ws = null;
+        let sessionId = null;
+
+        const messagesDiv = document.getElementById('messages');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const sendBtn = document.getElementById('sendBtn');
+        const promptInput = document.getElementById('prompt');
+
+        function addMessage(content, type = 'system') {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+
+            if (typeof content === 'object') {
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(content, null, 2);
+                div.appendChild(pre);
+            } else {
+                div.innerHTML = content.replace(/\n/g, '<br>');
+            }
+
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function setConnected(connected) {
+            statusDot.className = `status-dot ${connected ? 'connected' : ''}`;
+            statusText.textContent = connected ? 'Connected' : 'Disconnected';
+            sendBtn.disabled = !connected;
+        }
+
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+
+            try {
+                ws = new WebSocket(url);
+
+                ws.onopen = () => {
+                    setConnected(true);
+                    addMessage('Connected to gateway', 'system');
+
+                    // Authenticate
+                    ws.send(JSON.stringify({
+                        type: 'authenticate',
+                        token: 'demo-token',
+                        client_type: 'web',
+                        user_id: 'web-user'
+                    }));
+                };
+
+                ws.onclose = () => {
+                    setConnected(false);
+                    addMessage('Disconnected from gateway', 'system');
+                };
+
+                ws.onerror = (error) => {
+                    addMessage(`Connection error: ${error.message || 'Unknown error'}`, 'error');
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                };
+
+            } catch (error) {
+                addMessage(`Failed to connect: ${error.message}`, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function handleMessage(data) {
+            console.log('Received:', data);
+
+            switch (data.type) {
+                case 'welcome':
+                    sessionId = data.session_id;
+                    addMessage(`Welcome! Session: ${sessionId}`, 'system');
+                    break;
+
+                case 'authenticated':
+                    if (data.success) {
+                        addMessage('Authenticated successfully', 'system');
+                        // Subscribe to agent events
+                        const agentId = document.getElementById('agentId').value;
+                        ws.send(JSON.stringify({
+                            type: 'subscribe',
+                            agent_id: agentId
+                        }));
+                    } else {
+                        addMessage(`Authentication failed: ${data.error}`, 'error');
+                    }
+                    break;
+
+                case 'subscribed':
+                    addMessage(`Subscribed to agent: ${data.agent_id}`, 'system');
+                    break;
+
+                case 'command_response':
+                    const response = data.response?.payload || data.response;
+                    if (response?.success === false) {
+                        addMessage(`Error: ${response.error}`, 'error');
+                    } else {
+                        addMessage(response, 'agent');
+                    }
+                    break;
+
+                case 'event':
+                    handleAgentEvent(data);
+                    break;
+
+                case 'error':
+                    addMessage(`Error: ${data.error}`, 'error');
+                    break;
+
+                default:
+                    addMessage(data, 'system');
+            }
+        }
+
+        function handleAgentEvent(event) {
+            const eventData = event.data;
+            const eventType = eventData?.type || 'unknown';
+
+            if (eventType === 'task_progress') {
+                const payload = eventData.payload || {};
+                const content = payload.content || '';
+                const role = payload.role || 'agent';
+
+                if (content) {
+                    addMessage(content, role === 'assistant' ? 'agent' : 'system');
+                }
+            } else if (eventType === 'task_completed') {
+                addMessage('✅ Task completed', 'system');
+            } else if (eventType === 'task_failed') {
+                addMessage(`❌ Task failed: ${eventData.payload?.error || 'Unknown error'}`, 'error');
+            }
+        }
+
+        function sendTask() {
+            const prompt = promptInput.value.trim();
+            if (!prompt || !ws) return;
+
+            const agentId = document.getElementById('agentId').value;
+
+            addMessage(prompt, 'user');
+
+            ws.send(JSON.stringify({
+                type: 'command',
+                agent_id: agentId,
+                command: 'execute_task',
+                payload: {
+                    prompt: prompt
+                }
+            }));
+
+            promptInput.value = '';
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendTask();
+            }
+        }
+
+        // Auto-connect on load
+        // connect();
+    </script>
+</body>
+</html>
