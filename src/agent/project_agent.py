@@ -33,17 +33,31 @@ class ProjectConfig:
     project_path: Path
     working_area: str
 
-    # Git settings
-    git_author_name: str = "Cogent Agent"
-    git_author_email: str = "cogent@localhost"
-    default_branch: str = "main"
+    # Git settings (defaults loaded from environment via GitConfig)
+    git_author_name: str | None = None
+    git_author_email: str | None = None
+    default_branch: str | None = None
 
     # Workflow settings
     auto_commit: bool = True
-    auto_commit_interval: int = 300
+    auto_commit_interval: int | None = None
     run_tests: bool = True
     auto_create_pr: bool = True
     auto_merge: bool = True
+
+    def __post_init__(self):
+        """Load defaults from environment config if not specified."""
+        from .config import get_config
+        git_config = get_config().git
+
+        if self.git_author_name is None:
+            self.git_author_name = git_config.author_name
+        if self.git_author_email is None:
+            self.git_author_email = git_config.author_email
+        if self.default_branch is None:
+            self.default_branch = git_config.default_branch
+        if self.auto_commit_interval is None:
+            self.auto_commit_interval = git_config.auto_commit_interval
 
 
 @dataclass

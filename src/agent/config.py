@@ -80,7 +80,15 @@ class NATSConfig(BaseSettings):
 
 
 class GitConfig(BaseSettings):
-    """Git configuration."""
+    """
+    Git configuration.
+
+    Environment variables:
+        GIT_AUTHOR_NAME: Git author name for commits
+        GIT_AUTHOR_EMAIL: Git author email for commits
+        GIT_DEFAULT_BRANCH: Default branch name (default: main)
+        GIT_AUTO_COMMIT_INTERVAL: Auto-commit interval in seconds (0 to disable)
+    """
 
     model_config = SettingsConfigDict(env_prefix="GIT_", extra="ignore")
 
@@ -89,7 +97,7 @@ class GitConfig(BaseSettings):
         description="Git author name for commits",
     )
     author_email: str = Field(
-        default="cogent@localhost",
+        default="agent@cogent.local",
         description="Git author email for commits",
     )
     default_branch: str = Field(
